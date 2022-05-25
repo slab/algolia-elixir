@@ -5,5 +5,9 @@
 /.fetch
 erl_crash.dump
 *.ez
+*.iml
 search-*.tar
 .elixir_ls
+.idea/*
+.tool-versions
+
