@@ -568,4 +568,12 @@ defmodule Algolia do
   def wait(response = {:ok, _}), do: wait(response, 1000)
   def wait(response = {:error, _}), do: response
   def wait(response), do: response
+
+  @doc """
+  Push events to the Insights REST API.
+  Corresponds to https://www.algolia.com/doc/rest-api/insights/#push-events
+  """
+  def push_events() do
+
+  end
 end
