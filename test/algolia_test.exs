@@ -370,4 +370,9 @@ defmodule AlgoliaTest do
     %{"index" => "test", "query_headers" => headers} = log
     assert headers =~ ~r/X-Forwarded-For: 1\.2\.3\.4/
   end
+
+  test "push_events is successful" do
+    IO.puts "in push_events test"
+    push_events()
+  end
 end
