@@ -8,6 +8,7 @@ erl_crash.dump
 *.iml
 search-*.tar
 .elixir_ls
+.envrc
 .idea/*
 .tool-versions
 
