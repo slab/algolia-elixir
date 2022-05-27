@@ -569,7 +569,6 @@ defmodule Algolia do
   def wait(response = {:error, _}), do: response
   def wait(response), do: response
 
-
   @doc """
   Push events to the Insights REST API.
   Corresponds to https://www.algolia.com/doc/rest-api/insights/#push-events
@@ -584,20 +583,26 @@ defmodule Algolia do
   defp push_events(events, curr_retry) do
     :post
     |> :hackney.request(
-         "https://insights.algolia.io/1/events",
-         request_headers([]),
-         Jason.encode!(%{ "events" => events}),
-         [:with_body,
-          path_encode_fun: &URI.encode/1,
-          connect_timeout: 3_000 * (curr_retry + 1),
-          recv_timeout: 30_000 * (curr_retry + 1),
-          ssl_options: [{:versions, [:"tlsv1.2"]}]])
+      "https://insights.algolia.io/1/events",
+      request_headers([]),
+      Jason.encode!(%{"events" => events}),
+      [
+        :with_body,
+        path_encode_fun: &URI.encode/1,
+        connect_timeout: 3_000 * (curr_retry + 1),
+        recv_timeout: 30_000 * (curr_retry + 1),
+        ssl_options: [{:versions, [:"tlsv1.2"]}]
+      ]
+    )
     |> case do
-         {:ok, code, _headers, response} when code in 200..299 ->
-           {:ok, Jason.decode!(response)}
-         {:ok, code, _, response} ->
-           {:error, code, response}
-         _ -> push_events(events, curr_retry + 1)
-     end
+      {:ok, code, _headers, response} when code in 200..299 ->
+        {:ok, Jason.decode!(response)}
+
+      {:ok, code, _, response} ->
+        {:error, code, response}
+
+      _ ->
+        push_events(events, curr_retry + 1)
+    end
   end
 end
