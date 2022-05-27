@@ -569,93 +569,35 @@ defmodule Algolia do
   def wait(response = {:error, _}), do: response
   def wait(response), do: response
 
+
   @doc """
   Push events to the Insights REST API.
   Corresponds to https://www.algolia.com/doc/rest-api/insights/#push-events
-  curl -X POST \
-    https://insights.algolia.io/1/events \
-    -H 'x-algolia-api-key: YourSearchOnlyAPIKey' \
-    -H 'x-algolia-application-id: YourApplicationID' \
-    -H 'Content-Type: application/json' \
-    -d '{
-          "events": [
-            {
-              "eventType": "click",
-              "eventName": "Product Clicked",
-              "index": "products",
-              "userToken": "user-123456",
-              "timestamp": 1645617796953,
-              "objectIDs": ["9780545139700", "9780439784542"],
-              "queryID": "43b15df305339e827f0ac0bdc5ebcaa7",
-              "positions": [7, 6]
-            },
-            {
-              "eventType": "view",
-              "eventName":"Product Detail Page Viewed",
-              "index": "products",
-              "userToken": "user-123456",
-              "timestamp": 1645617796953,
-              "objectIDs": ["9780545139700", "9780439784542"]
-            },
-            {
-              "eventType": "conversion",
-              "eventName": "Product Purchased",
-              "index": "products",
-              "userToken": "user-123456",
-              "timestamp": 1645617796953,
-              "objectIDs": ["9780545139700", "9780439784542"],
-              "queryID": "43b15df305339e827f0ac0bdc5ebcaa7"
-            }
-          ]
-        }'
+  `events` should be a List of Maps, each Map having the fields described in the link above
   """
-  def push_events do
-    # refactor send_request to take in domain
-    curr_retry = 0
-    url = "https://insights.algolia.io/1/events"
-    headers = [
-      {"X-Algolia-API-Key", api_key()},
-      {"X-Algolia-Application-Id", application_id()}
-    ]
-    body = Jason.encode!(%{ "events" => [
-      %{"eventType" => "click",
-        "eventName" => "Product Clicked",
-        "index" => "products",
-        "userToken" => "user-123456",
-        "objectIDs" => ["9780545139700", "9780439784542"],
-        "queryID" => "43b15df305339e827f0ac0bdc5ebcaa7",
-        "positions" => [7, 6]},
-      %{"eventType" => "view",
-        "eventName" => "Product Detail Page Viewed",
-        "index" =>  "products",
-        "userToken" => "user-123456",
-        "objectIDs" => ["9780545139700", "9780439784542"]},
-      %{"eventType" => "conversion",
-        "eventName" => "Product Purchased",
-        "index" => "products",
-        "userToken" => "user-123456",
-        "objectIDs" => ["9780545139700", "9780439784542"],
-        "queryID" => "43b15df305339e827f0ac0bdc5ebcaa7"}
-    ]})
+  def push_events(events), do: push_events(events, 0)
 
+  defp push_events(_events, 4) do
+    {:error, "Unable to connect to Algolia Insights"}
+  end
+
+  defp push_events(events, curr_retry) do
     :post
-    |> :hackney.request(url, headers, body, [
-      :with_body,
-      path_encode_fun: &URI.encode/1,
-      connect_timeout: 3_000 * (curr_retry + 1),
-      recv_timeout: 30_000 * (curr_retry + 1),
-      ssl_options: [{:versions, [:"tlsv1.2"]}]
-    ])
+    |> :hackney.request(
+         "https://insights.algolia.io/1/events",
+         request_headers([]),
+         Jason.encode!(%{ "events" => events}),
+         [:with_body,
+          path_encode_fun: &URI.encode/1,
+          connect_timeout: 3_000 * (curr_retry + 1),
+          recv_timeout: 30_000 * (curr_retry + 1),
+          ssl_options: [{:versions, [:"tlsv1.2"]}]])
     |> case do
          {:ok, code, _headers, response} when code in 200..299 ->
-           IO.puts response
            {:ok, Jason.decode!(response)}
-
          {:ok, code, _, response} ->
-           IO.puts response
            {:error, code, response}
-
-         _ -> raise "fail"
+         _ -> push_events(events, curr_retry + 1)
      end
   end
 end

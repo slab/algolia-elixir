@@ -372,7 +372,26 @@ defmodule AlgoliaTest do
   end
 
   test "push_events is successful" do
-    IO.puts "in push_events test"
-    push_events()
+    events = [
+      %{"eventType" => "click",
+        "eventName" => "Product Clicked",
+        "index" => "products",
+        "userToken" => "user-123456",
+        "objectIDs" => ["9780545139700", "9780439784542"],
+        "queryID" => "43b15df305339e827f0ac0bdc5ebcaa7",
+        "positions" => [7, 6]},
+      %{"eventType" => "view",
+        "eventName" => "Product Detail Page Viewed",
+        "index" =>  "products",
+        "userToken" => "user-123456",
+        "objectIDs" => ["9780545139700", "9780439784542"]},
+      %{"eventType" => "conversion",
+        "eventName" => "Product Purchased",
+        "index" => "products",
+        "userToken" => "user-123456",
+        "objectIDs" => ["9780545139700", "9780439784542"],
+        "queryID" => "43b15df305339e827f0ac0bdc5ebcaa7"}
+    ]
+    assert {:ok, _} = push_events(events)
   end
 end
