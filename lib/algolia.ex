@@ -41,8 +41,9 @@ defmodule Algolia do
 
   defp host(:read, 0), do: "#{application_id()}-dsn.algolia.net"
   defp host(:write, 0), do: "#{application_id()}.algolia.net"
+  defp host(:insights, 0), do: "insights.algolia.io"
 
-  defp host(_read_or_write, curr_retry) when curr_retry <= 3,
+  defp host(_subdomain_hint, curr_retry) when curr_retry <= 3,
     do: "#{application_id()}-#{curr_retry}.algolianet.com"
 
   @doc """
@@ -146,14 +147,14 @@ defmodule Algolia do
     send_request(:read, %{method: :post, path: path, body: body})
   end
 
-  defp send_request(read_or_write, request, curr_retry \\ 0)
+  defp send_request(subdomain_hint, request, curr_retry \\ 0)
 
-  defp send_request(_read_or_write, _request, 4) do
+  defp send_request(_subdomain_hint, _request, 4) do
     {:error, "Unable to connect to Algolia"}
   end
 
-  defp send_request(read_or_write, request, curr_retry) do
-    url = request_url(read_or_write, curr_retry, request[:path])
+  defp send_request(subdomain_hint, request, curr_retry) do
+    url = request_url(subdomain_hint, curr_retry, request[:path])
     headers = request_headers(request[:options] || [])
     body = request[:body] || ""
 
@@ -173,13 +174,13 @@ defmodule Algolia do
         {:error, code, response}
 
       _ ->
-        send_request(read_or_write, request, curr_retry + 1)
+        send_request(subdomain_hint, request, curr_retry + 1)
     end
   end
 
-  defp request_url(read_or_write, retry, path) do
+  defp request_url(subdomain_hint, retry, path) do
     "https://"
-    |> Path.join(host(read_or_write, retry))
+    |> Path.join(host(subdomain_hint, retry))
     |> Path.join(path)
   end
 
@@ -574,35 +575,12 @@ defmodule Algolia do
   Corresponds to https://www.algolia.com/doc/rest-api/insights/#push-events
   `events` should be a List of Maps, each Map having the fields described in the link above
   """
-  def push_events(events), do: push_events(events, 0)
+  def push_events(events) do
+    body = Jason.encode!(%{"events" => events})
 
-  defp push_events(_events, 4) do
-    {:error, "Unable to connect to Algolia Insights"}
-  end
-
-  defp push_events(events, curr_retry) do
-    :post
-    |> :hackney.request(
-      "https://insights.algolia.io/1/events",
-      request_headers([]),
-      Jason.encode!(%{"events" => events}),
-      [
-        :with_body,
-        path_encode_fun: &URI.encode/1,
-        connect_timeout: 3_000 * (curr_retry + 1),
-        recv_timeout: 30_000 * (curr_retry + 1),
-        ssl_options: [{:versions, [:"tlsv1.2"]}]
-      ]
+    send_request(
+      :insights,
+      %{method: :post, path: "1/events", body: body}
     )
-    |> case do
-      {:ok, code, _headers, response} when code in 200..299 ->
-        {:ok, Jason.decode!(response)}
-
-      {:ok, code, _, response} ->
-        {:error, code, response}
-
-      _ ->
-        push_events(events, curr_retry + 1)
-    end
   end
 end
