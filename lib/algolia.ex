@@ -558,7 +558,7 @@ defmodule Algolia do
   end
 
   @doc """
-  Convenient version of wait_task/4, accepts a response to be waited on
+  Convinient version of wait_task/4, accepts a response to be waited on
   directly. This enables piping a operation directly into wait_task
   """
   def wait(response = {:ok, %{"indexName" => index, "taskID" => task_id}}, time_before_retry) do
