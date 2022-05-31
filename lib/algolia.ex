@@ -41,7 +41,8 @@ defmodule Algolia do
 
   defp host(:read, 0), do: "#{application_id()}-dsn.algolia.net"
   defp host(:write, 0), do: "#{application_id()}.algolia.net"
-  defp host(:insights, 0), do: "insights.algolia.io"
+
+  defp host(:insights, _curr_retry), do: "insights.algolia.io"
 
   defp host(_subdomain_hint, curr_retry) when curr_retry <= 3,
     do: "#{application_id()}-#{curr_retry}.algolianet.com"
