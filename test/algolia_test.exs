@@ -170,6 +170,17 @@ defmodule AlgoliaTest do
     ] == hits
   end
 
+  test "browse index" do
+    :rand.seed(:exs1024, :erlang.timestamp)
+    count = :rand.uniform 10
+    docs = Enum.map(1..count, &(%{id: &1, test: "browse_index"}))
+
+    {:ok, _} =  save_objects("test_3", docs, id_attribute: :id) |> wait
+
+    {:ok, %{"hits" => hits1}} = browse("test_3", query: "browse_index")
+    assert length(hits1) === count
+  end
+
   defp generate_fixtures_for_index(index) do
     :rand.seed(:exs1024, :erlang.timestamp)
     count = :rand.uniform(3)
