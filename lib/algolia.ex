@@ -157,6 +157,26 @@ defmodule Algolia do
     send_request(:read, %{method: :post, path: path, body: body})
   end
 
+  @doc """
+  Browse a single index
+  """
+  def browse(index, opts \\ []) do
+    {request_options, opts} = Keyword.pop(opts, :request_options)
+
+    path = Paths.browse(index, opts)
+
+    with {:ok, %{} = data} <-
+           send_request(:read, %{method: :get, path: path, options: request_options}) do
+      :telemetry.execute(
+        [:algolia, :browse, :result],
+        %{hits: data["nbHits"], processing_time: data["processingTimeMS"]},
+        %{index: index, options: opts}
+      )
+
+      {:ok, data}
+    end
+  end
+
   defp send_request(subdomain_hint, request) do
     start_metadata = %{request: request, subdomain_hint: subdomain_hint}
 
