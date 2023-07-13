@@ -1,17 +1,17 @@
-defmodule Algolia do
+defmodule Algolia2 do
   @moduledoc """
   Elixir implementation of Algolia search API, using Hackney for http requests
   """
 
-  alias Algolia.Paths
+  alias Algolia2.Paths
 
   defmodule MissingApplicationIDError do
     defexception message: """
                    The `application_id` settings is required to use Algolia. Please include your
                    application_id in your application config file like so:
-                     config :algolia, application_id: YOUR_APPLICATION_ID
+                     config :algolia2, application_id: YOUR_APPLICATION_ID
                    Alternatively, you can also set the secret key as an environment variable:
-                     ALGOLIA_APPLICATION_ID=YOUR_APP_ID
+                     ALGOLIA2_APPLICATION_ID=YOUR_APP_ID
                  """
   end
 
@@ -19,9 +19,9 @@ defmodule Algolia do
     defexception message: """
                    The `api_key` settings is required to use Algolia. Please include your
                    api key in your application config file like so:
-                     config :algolia, api_key: YOUR_API_KEY
+                     config :algolia2, api_key: YOUR_API_KEY
                    Alternatively, you can also set the secret key as an environment variable:
-                     ALGOLIA_API_KEY=YOUR_SECRET_API_KEY
+                     ALGOLIA2_API_KEY=YOUR_SECRET_API_KEY
                  """
   end
 
@@ -30,12 +30,12 @@ defmodule Algolia do
   end
 
   def application_id do
-    System.get_env("ALGOLIA_APPLICATION_ID") || Application.get_env(:algolia, :application_id) ||
+    System.get_env("ALGOLIA2_APPLICATION_ID") || Application.get_env(:algolia2, :application_id) ||
       raise MissingApplicationIDError
   end
 
   def api_key do
-    System.get_env("ALGOLIA_API_KEY") || Application.get_env(:algolia, :api_key) ||
+    System.get_env("ALGOLIA2_API_KEY") || Application.get_env(:algolia2, :api_key) ||
       raise MissingAPIKeyError
   end
 

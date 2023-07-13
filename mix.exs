@@ -1,9 +1,9 @@
-defmodule Algolia.Mixfile do
+defmodule Algolia2.Mixfile do
   use Mix.Project
 
   def project do
     [
-      app: :algolia,
+      app: :algolia2,
       version: "0.8.0",
       description: "Elixir implementation of Algolia Search API",
       elixir: "~> 1.5",

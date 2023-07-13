@@ -1,4 +1,4 @@
-defmodule Algolia.Paths do
+defmodule Algolia2.Paths do
   @moduledoc false
 
   @version 1
