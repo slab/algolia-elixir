@@ -37,7 +37,7 @@ defmodule Algolia.Paths do
     index(index) <> "/facets/" <> URI.encode(facet) <> "/query"
   end
 
-  def browse(index, opts), do: index(index) <> to_query(opts)
+  def browse(index, opts), do: index(index) <> "/browse" <> to_query(opts)
 
   def clear(index), do: index(index) <> "/clear"
 
