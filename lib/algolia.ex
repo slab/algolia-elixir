@@ -5,6 +5,12 @@ defmodule Algolia do
 
   use Tesla
 
+  plug Algolia.Middleware.Telemetry
+  plug Algolia.Middleware.Headers
+  plug Algolia.Middleware.Retry
+  plug Algolia.Middleware.BaseUrl
+  plug Tesla.Middleware.JSON
+
   alias Algolia.Paths
 
   defmodule MissingApplicationIDError do
@@ -41,22 +47,13 @@ defmodule Algolia do
       raise MissingAPIKeyError
   end
 
-  defp host(:read, 0), do: "#{application_id()}-dsn.algolia.net"
-  defp host(:write, 0), do: "#{application_id()}.algolia.net"
-
-  defp host(:insights, _curr_retry), do: "insights.algolia.io"
-
-  defp host(_subdomain_hint, curr_retry) when curr_retry <= 3,
-    do: "#{application_id()}-#{curr_retry}.algolianet.com"
-
   @doc """
   Multiple queries
   """
   def multi(queries, opts \\ []) do
     path = Paths.multiple_queries(opts[:strategy])
-    body = queries |> format_multi() |> Jason.encode!()
 
-    send_request(:read, %{method: :post, path: path, body: body, options: opts[:request_options]})
+    send_request(:read, %{method: :post, path: path, body: format_multi(queries), options: opts[:request_options]})
   end
 
   defp format_multi(queries) do
@@ -150,11 +147,7 @@ defmodule Algolia do
   def search_for_facet_values(index, facet, text, query \\ %{})
       when is_binary(index) and is_binary(facet) and is_binary(text) do
     path = Paths.search_facet(index, facet)
-
-    body =
-      query
-      |> Map.put("facetQuery", text)
-      |> Jason.encode!()
+    body = Map.put(query,"facetQuery", text)
 
     send_request(:read, %{method: :post, path: path, body: body})
   end
@@ -180,69 +173,20 @@ defmodule Algolia do
   end
 
   defp send_request(subdomain_hint, request) do
-    start_metadata = %{request: request, subdomain_hint: subdomain_hint}
-
-    :telemetry.span([:algolia, :request], start_metadata, fn ->
-      {result, stop_metadata} =
-        case do_send_request(subdomain_hint, request) do
-          {:ok, result, retries} ->
-            {{:ok, result}, %{success: true, result: result, retries: retries}}
-
-          {:error, error, retries} ->
-            {{:error, error}, %{success: false, error: error, retries: retries}}
-
-          {:error, code, error, retries} ->
-            {{:error, code, error}, %{success: false, error: error, retries: retries}}
-        end
-
-      {result, Map.merge(start_metadata, stop_metadata)}
-    end)
-  end
-
-  defp do_send_request(subdomain_hint, request, curr_retry \\ 0)
-
-  defp do_send_request(_subdomain_hint, _request, 4) do
-    {:error, "Unable to connect to Algolia", 4}
-  end
-
-  defp do_send_request(subdomain_hint, request, curr_retry) do
     {path, req} = Map.pop(request, :path)
-    url = request_url(subdomain_hint, curr_retry, path)
-
     {options, req} = Map.pop(req, :options, [])
-    headers = request_headers(options)
 
     req
     |> Map.to_list()
-    |> Enum.concat(url: url, headers: headers)
+    |> Enum.concat(url: path, headers: options[:headers] || [], opts: [subdomain_hint: subdomain_hint])
     |> request()
     |> case do
-      {:ok, %{status: code, body: response}} when code in 200..299 ->
-        {:ok, Jason.decode!(response), curr_retry}
+      {:ok, %{body: response}} ->
+        {:ok, response}
 
-      {:ok, %{status: code, body: response}} ->
-        {:error, code, response, curr_retry}
-
-      _ ->
-        do_send_request(subdomain_hint, request, curr_retry + 1)
+      err ->
+        err
     end
-  end
-
-  defp request_url(subdomain_hint, retry, path) do
-    "https://"
-    |> Path.join(host(subdomain_hint, retry))
-    |> Path.join(path)
-  end
-
-  defp request_headers(request_options) do
-    custom = request_options[:headers] || []
-
-    default = [
-      {"X-Algolia-API-Key", api_key()},
-      {"X-Algolia-Application-Id", application_id()}
-    ]
-
-    custom ++ default
   end
 
   @doc """
@@ -265,11 +209,10 @@ defmodule Algolia do
     if opts[:id_attribute] do
       save_object(index, object, opts)
     else
-      body = Jason.encode!(object)
       path = Paths.index(index)
 
       :write
-      |> send_request(%{method: :post, path: path, body: body, options: opts[:request_options]})
+      |> send_request(%{method: :post, path: path, body: object, options: opts[:request_options]})
       |> inject_index_into_response(index)
     end
   end
@@ -318,11 +261,10 @@ defmodule Algolia do
   end
 
   defp save_object(index, object, object_id, request_options) do
-    body = Jason.encode!(object)
     path = Paths.object(index, object_id)
 
     :write
-    |> send_request(%{method: :put, path: path, body: body, options: request_options})
+    |> send_request(%{method: :put, path: path, body: object, options: request_options})
     |> inject_index_into_response(index)
   end
 
@@ -342,11 +284,10 @@ defmodule Algolia do
   Partially updates an object, takes option upsert: true or false
   """
   def partial_update_object(index, object, object_id, opts \\ [upsert?: true]) do
-    body = Jason.encode!(object)
     path = Paths.partial_object(index, object_id, opts[:upsert?])
 
     :write
-    |> send_request(%{method: :post, path: path, body: body, options: opts[:request_options]})
+    |> send_request(%{method: :post, path: path, body: object, options: opts[:request_options]})
     |> inject_index_into_response(index)
   end
 
@@ -399,10 +340,9 @@ defmodule Algolia do
 
   defp send_batch_request(requests, index, request_options) do
     path = Paths.batch(index)
-    body = Jason.encode!(requests)
 
     :write
-    |> send_request(%{method: :post, path: path, body: body, options: request_options})
+    |> send_request(%{method: :post, path: path, body: requests, options: request_options})
     |> inject_index_into_response(index)
   end
 
@@ -474,7 +414,6 @@ defmodule Algolia do
       |> sanitize_delete_by_opts()
       |> validate_delete_by_opts!()
       |> Map.new()
-      |> Jason.encode!()
 
     :write
     |> send_request(%{method: :post, path: path, body: body, options: request_options})
@@ -525,11 +464,10 @@ defmodule Algolia do
   Set the settings of a index
   """
   def set_settings(index, settings) do
-    body = Jason.encode!(settings)
     path = Paths.settings(index)
 
     :write
-    |> send_request(%{method: :put, path: path, body: body})
+    |> send_request(%{method: :put, path: path, body: settings})
     |> inject_index_into_response(index)
   end
 
@@ -546,7 +484,7 @@ defmodule Algolia do
   Moves an index to new one
   """
   def move_index(src_index, dst_index) do
-    body = Jason.encode!(%{operation: "move", destination: dst_index})
+    body = %{operation: "move", destination: dst_index}
 
     :write
     |> send_request(%{method: :post, path: Paths.operation(src_index), body: body})
@@ -557,7 +495,7 @@ defmodule Algolia do
   Copies an index to a new one
   """
   def copy_index(src_index, dst_index) do
-    body = Jason.encode!(%{operation: "copy", destination: dst_index})
+    body = %{operation: "copy", destination: dst_index}
 
     :write
     |> send_request(%{method: :post, path: Paths.operation(src_index), body: body})
@@ -626,11 +564,11 @@ defmodule Algolia do
   `events` should be a List of Maps, each Map having the fields described in the link above
   """
   def push_events(events) do
-    body = Jason.encode!(%{"events" => events})
+    body = %{"events" => events}
 
     send_request(
       :insights,
-      %{method: :post, path: "1/events", body: body}
+      %{method: :post, path: "/1/events", body: body}
     )
   end
 end
