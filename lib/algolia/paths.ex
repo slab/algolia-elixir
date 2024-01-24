@@ -21,7 +21,7 @@ defmodule Algolia.Paths do
 
   def task(index, task_id), do: index(index) <> "/task/#{task_id}"
 
-  def object(index, object_id), do: index(index) <> "/#{object_id}"
+  def object(index, object_id), do: index(index) <> "/#{URI.encode(object_id)}"
 
   def partial_object(index, object_id, upsert) do
     params = if upsert, do: [], else: [createIfNotExists: false]

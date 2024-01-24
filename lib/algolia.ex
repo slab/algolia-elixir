@@ -1,7 +1,9 @@
 defmodule Algolia do
   @moduledoc """
-  Elixir implementation of Algolia search API, using Hackney for http requests
+  Elixir implementation of Algolia search API
   """
+
+  use Tesla
 
   alias Algolia.Paths
 
@@ -204,22 +206,21 @@ defmodule Algolia do
   end
 
   defp do_send_request(subdomain_hint, request, curr_retry) do
-    url = request_url(subdomain_hint, curr_retry, request[:path])
-    headers = request_headers(request[:options] || [])
-    body = request[:body] || ""
+    {path, req} = Map.pop(request, :path)
+    url = request_url(subdomain_hint, curr_retry, path)
 
-    request[:method]
-    |> :hackney.request(url, headers, body, [
-      :with_body,
-      path_encode_fun: &URI.encode/1,
-      connect_timeout: 3_000 * (curr_retry + 1),
-      recv_timeout: 30_000 * (curr_retry + 1)
-    ])
+    {options, req} = Map.pop(req, :options, [])
+    headers = request_headers(options)
+
+    req
+    |> Map.to_list()
+    |> Enum.concat(url: url, headers: headers)
+    |> request()
     |> case do
-      {:ok, code, _headers, response} when code in 200..299 ->
+      {:ok, %{status: code, body: response}} when code in 200..299 ->
         {:ok, Jason.decode!(response), curr_retry}
 
-      {:ok, code, _, response} ->
+      {:ok, %{status: code, body: response}} ->
         {:error, code, response, curr_retry}
 
       _ ->
