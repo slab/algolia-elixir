@@ -379,7 +379,7 @@ defmodule AlgoliaTest do
 
     {:ok, %{"logs" => [log]}} = get_logs(indexName: "test", length: 1, type: :build)
     %{"index" => "test", "query_headers" => headers} = log
-    assert headers =~ ~r/X-Forwarded-For: 1\.2\.3\.4/
+    assert headers =~ ~r/X-Forwarded-For: 1\.2\.3\.4/i
   end
 
   test "push_events is successful" do
