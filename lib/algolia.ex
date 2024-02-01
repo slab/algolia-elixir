@@ -3,14 +3,6 @@ defmodule Algolia do
   Elixir implementation of Algolia search API
   """
 
-  use Tesla
-
-  plug Algolia.Middleware.Telemetry
-  plug Algolia.Middleware.Headers
-  plug Algolia.Middleware.Retry
-  plug Algolia.Middleware.BaseUrl
-  plug Tesla.Middleware.JSON
-
   alias Algolia.Paths
 
   defmodule MissingApplicationIDError do
@@ -47,13 +39,57 @@ defmodule Algolia do
       raise MissingAPIKeyError
   end
 
+  @type client() :: Tesla.Client.t()
+  @type index() :: String.t()
+  @type request_option() :: {:headers, Tesla.Env.headers()}
+  @type result(resp) :: {:ok, resp} | {:error, any()}
+
+  @doc """
+  Create a new Algolia client.
+  """
+  @spec new([
+          {:api_key, String.t()}
+          | {:application_id, String.t()}
+          | {:middleware, ([Tesla.Client.middleware()] -> [Tesla.Client.middleware()])}
+          | {:adapter, Tesla.Client.adapter()}
+        ]) :: client()
+  def new(opts \\ []) do
+    middleware_fn = Keyword.get(opts, :middleware, & &1)
+    adapter = Keyword.get(opts, :adapter)
+
+    middleware = opts |> default_middleware() |> middleware_fn.()
+
+    Tesla.client(middleware, adapter)
+  end
+
+  defp default_middleware(opts) do
+    [
+      Algolia.Middleware.Telemetry,
+      {Algolia.Middleware.Headers, Keyword.take(opts, [:api_key, :application_id])},
+      Algolia.Middleware.Retry,
+      {Algolia.Middleware.BaseUrl, Keyword.take(opts, [:application_id])},
+      Tesla.Middleware.JSON
+    ]
+  end
+
+  @type multi_strategy() :: nil | :stop_if_enough_matches
+
   @doc """
   Multiple queries
   """
-  def multi(queries, opts \\ []) do
+  @spec multi(client(), [map()], [{:strategy, multi_strategy()} | request_option()]) ::
+          result(map())
+  def multi(client, queries, opts \\ []) do
+    {req_opts, opts} = pop_request_opts(opts)
+
     path = Paths.multiple_queries(opts[:strategy])
 
-    send_request(:read, %{method: :post, path: path, body: format_multi(queries), options: opts[:request_options]})
+    send_request(client, :read, %{
+      method: :post,
+      path: path,
+      body: format_multi(queries),
+      options: req_opts
+    })
   end
 
   defp format_multi(queries) do
@@ -79,13 +115,19 @@ defmodule Algolia do
   @doc """
   Search a single index
   """
-  def search(index, query, opts \\ []) do
-    {request_options, opts} = Keyword.pop(opts, :request_options)
+  @spec search(client(), index(), String.t(), [{atom(), any()} | request_option()]) ::
+          result(map())
+  def search(client, index, query, opts \\ []) do
+    {req_opts, opts} = pop_request_opts(opts)
 
     path = Paths.search(index, query, opts)
 
     with {:ok, %{} = data} <-
-           send_request(:read, %{method: :get, path: path, options: request_options}) do
+           send_request(client, :read, %{
+             method: :get,
+             path: path,
+             options: req_opts
+           }) do
       :telemetry.execute(
         [:algolia, :search, :result],
         %{hits: data["nbHits"], processing_time: data["processingTimeMS"]},
@@ -142,26 +184,33 @@ defmodule Algolia do
         }
       }
   """
-  @spec search_for_facet_values(binary, binary, binary, map) ::
-          {:ok, map} | {:error, code :: integer, message :: binary}
-  def search_for_facet_values(index, facet, text, query \\ %{})
-      when is_binary(index) and is_binary(facet) and is_binary(text) do
-    path = Paths.search_facet(index, facet)
-    body = Map.put(query,"facetQuery", text)
+  @spec search_for_facet_values(client(), index(), String.t(), String.t(), [
+          request_option() | {atom(), any()}
+        ]) :: result(map())
+  def search_for_facet_values(client, index, facet, text, opts \\ []) do
+    {req_opts, opts} = pop_request_opts(opts)
 
-    send_request(:read, %{method: :post, path: path, body: body})
+    path = Paths.search_facet(index, facet)
+
+    body =
+      opts
+      |> Map.new()
+      |> Map.put("facetQuery", text)
+
+    send_request(client, :read, %{method: :post, path: path, body: body, options: req_opts})
   end
 
   @doc """
   Browse a single index
   """
-  def browse(index, opts \\ []) do
-    {request_options, opts} = Keyword.pop(opts, :request_options)
+  @spec browse(client(), index(), [request_option()]) :: result(map())
+  def browse(client, index, opts \\ []) do
+    {req_opts, opts} = pop_request_opts(opts)
 
     path = Paths.browse(index, opts)
 
     with {:ok, %{} = data} <-
-           send_request(:read, %{method: :get, path: path, options: request_options}) do
+           send_request(client, :read, %{method: :get, path: path, options: req_opts}) do
       :telemetry.execute(
         [:algolia, :browse, :result],
         %{hits: data["nbHits"], processing_time: data["processingTimeMS"]},
@@ -172,31 +221,15 @@ defmodule Algolia do
     end
   end
 
-  defp send_request(subdomain_hint, request) do
-    {path, req} = Map.pop(request, :path)
-    {options, req} = Map.pop(req, :options, [])
-
-    req
-    |> Map.to_list()
-    |> Enum.concat(url: path, headers: options[:headers] || [], opts: [subdomain_hint: subdomain_hint])
-    |> request()
-    |> case do
-      {:ok, %{body: response}} ->
-        {:ok, response}
-
-      err ->
-        err
-    end
-  end
-
   @doc """
   Get an object in an index by objectID
   """
-  def get_object(index, object_id, opts \\ []) do
+  @spec get_object(client(), index(), String.t(), [request_option()]) :: result(map())
+  def get_object(client, index, object_id, opts \\ []) do
     path = Paths.object(index, object_id)
 
-    :read
-    |> send_request(%{method: :get, path: path, options: opts[:request_options]})
+    client
+    |> send_request(:read, %{method: :get, path: path, options: opts})
     |> inject_index_into_response(index)
   end
 
@@ -205,14 +238,22 @@ defmodule Algolia do
 
   An attribute can be chosen as the objectID.
   """
-  def add_object(index, object, opts \\ []) do
+  @spec add_object(client(), index(), map(), [
+          {:id_attribute, atom() | String.t()} | request_option()
+        ]) :: result(map())
+  def add_object(client, index, object, opts \\ []) do
     if opts[:id_attribute] do
-      save_object(index, object, opts)
+      save_object(client, index, object, opts)
     else
       path = Paths.index(index)
 
-      :write
-      |> send_request(%{method: :post, path: path, body: object, options: opts[:request_options]})
+      client
+      |> send_request(:write, %{
+        method: :post,
+        path: path,
+        body: object,
+        options: opts
+      })
       |> inject_index_into_response(index)
     end
   end
@@ -222,13 +263,16 @@ defmodule Algolia do
 
   An attribute can be chosen as the objectID.
   """
-  def add_objects(index, objects, opts \\ []) do
+  @spec add_objects(client(), index(), [map()], [
+          {:id_attribute, atom() | String.t()} | request_option()
+        ]) :: result(map())
+  def add_objects(client, index, objects, opts \\ []) do
     if opts[:id_attribute] do
-      save_objects(index, objects, opts)
+      save_objects(client, index, objects, opts)
     else
       objects
       |> build_batch_request("addObject")
-      |> send_batch_request(index, opts[:request_options])
+      |> send_batch_request(client, index, opts)
     end
   end
 
@@ -236,16 +280,19 @@ defmodule Algolia do
   Save a single object, without objectID specified, must have objectID as
   a field
   """
-  def save_object(index, object, opts \\ [])
+  @spec save_object(client(), index(), map(), [
+          {:id_attribute, atom() | String.t()} | request_option()
+        ]) :: result(map())
+  def save_object(client, index, object, opts \\ [])
 
-  def save_object(index, object, id) when is_map(object) and not is_list(id) do
-    save_object(index, object, id, [])
+  def save_object(client, index, object, id) when is_map(object) and not is_list(id) do
+    save_object(client, index, object, id, [])
   end
 
-  def save_object(index, object, opts) when is_map(object) do
+  def save_object(client, index, object, opts) when is_map(object) do
     id = object_id_for_save!(object, opts)
 
-    save_object(index, object, id, opts[:request_options])
+    save_object(client, index, object, id, opts)
   end
 
   defp object_id_for_save!(object, opts) do
@@ -260,41 +307,58 @@ defmodule Algolia do
     end
   end
 
-  defp save_object(index, object, object_id, request_options) do
+  defp save_object(client, index, object, object_id, opts) do
     path = Paths.object(index, object_id)
 
-    :write
-    |> send_request(%{method: :put, path: path, body: object, options: request_options})
+    client
+    |> send_request(:write, %{method: :put, path: path, body: object, options: opts})
     |> inject_index_into_response(index)
   end
 
   @doc """
   Save multiple objects
   """
-  def save_objects(index, objects, opts \\ [id_attribute: :objectID]) when is_list(objects) do
+  @spec save_objects(client(), index(), [map()], [
+          {:id_attribute, atom() | String.t()} | request_option()
+        ]) :: result(map())
+  def save_objects(client, index, objects, opts \\ [id_attribute: :objectID])
+      when is_list(objects) do
     id_attribute = opts[:id_attribute] || :objectID
 
     objects
     |> add_object_ids(id_attribute: id_attribute)
     |> build_batch_request("updateObject")
-    |> send_batch_request(index, opts[:request_options])
+    |> send_batch_request(client, index, opts)
   end
 
   @doc """
   Partially updates an object, takes option upsert: true or false
   """
-  def partial_update_object(index, object, object_id, opts \\ [upsert?: true]) do
+  @spec partial_update_object(client(), index(), map(), String.t(), [
+          {:upsert?, boolean()} | request_option()
+        ]) :: result(map())
+  def partial_update_object(client, index, object, object_id, opts \\ [upsert?: true]) do
     path = Paths.partial_object(index, object_id, opts[:upsert?])
 
-    :write
-    |> send_request(%{method: :post, path: path, body: object, options: opts[:request_options]})
+    client
+    |> send_request(:write, %{method: :post, path: path, body: object, options: opts})
     |> inject_index_into_response(index)
   end
 
   @doc """
   Partially updates multiple objects
   """
-  def partial_update_objects(index, objects, opts \\ [upsert?: true, id_attribute: :objectID]) do
+  @spec partial_update_objects(client(), index(), [map()], [
+          {:upsert?, boolean()}
+          | {:id_attribute, atom() | String.t()}
+          | request_option()
+        ]) :: result(map())
+  def partial_update_objects(
+        client,
+        index,
+        objects,
+        opts \\ [upsert?: true, id_attribute: :objectID]
+      ) do
     id_attribute = opts[:id_attribute] || :objectID
 
     upsert =
@@ -308,7 +372,7 @@ defmodule Algolia do
     objects
     |> add_object_ids(id_attribute: id_attribute)
     |> build_batch_request(action)
-    |> send_batch_request(index, opts[:request_options])
+    |> send_batch_request(client, index, opts)
   end
 
   # No need to add any objectID by default
@@ -338,11 +402,11 @@ defmodule Algolia do
     end
   end
 
-  defp send_batch_request(requests, index, request_options) do
+  defp send_batch_request(requests, client, index, opts) do
     path = Paths.batch(index)
 
-    :write
-    |> send_request(%{method: :post, path: path, body: requests, options: request_options})
+    client
+    |> send_request(:write, %{method: :post, path: path, body: requests, options: opts})
     |> inject_index_into_response(index)
   end
 
@@ -361,30 +425,30 @@ defmodule Algolia do
   @doc """
   Delete a object by its objectID
   """
-  def delete_object(index, object_id, opts \\ [])
+  @spec delete_object(client(), index(), String.t(), [request_option()]) :: result(map())
+  def delete_object(client, index, object_id, opts \\ [])
 
-  def delete_object(_index, "", _request_options) do
+  def delete_object(_client, _index, "", _request_options) do
     {:error, %InvalidObjectIDError{}}
   end
 
-  def delete_object(index, object_id, opts) do
+  def delete_object(client, index, object_id, opts) do
     path = Paths.object(index, object_id)
 
-    :write
-    |> send_request(%{method: :delete, path: path, options: opts[:request_options]})
+    client
+    |> send_request(:write, %{method: :delete, path: path, options: opts})
     |> inject_index_into_response(index)
   end
 
   @doc """
   Delete multiple objects
   """
-  def delete_objects(index, object_ids, opts \\ []) do
+  @spec delete_objects(client(), index(), [String.t()], [request_option()]) :: result(map())
+  def delete_objects(client, index, object_ids, opts \\ []) do
     object_ids
-    |> Enum.map(fn id ->
-      %{objectID: id}
-    end)
+    |> Enum.map(fn id -> %{objectID: id} end)
     |> build_batch_request("deleteObject")
-    |> send_batch_request(index, opts[:request_options])
+    |> send_batch_request(client, index, opts)
   end
 
   @doc """
@@ -404,8 +468,9 @@ defmodule Algolia do
       iex> Algolia.delete_by("index", filters: ["score < 30"])
       {:ok, %{"indexName" => "index", "taskId" => 42, "deletedAt" => "2018-10-30T15:33:13.556Z"}}
   """
-  def delete_by(index, opts) when is_list(opts) do
-    {request_options, opts} = Keyword.pop(opts, :request_options)
+  @spec delete_by(client(), index(), [{atom(), any()} | request_option()]) :: result(map())
+  def delete_by(client, index, opts) when is_list(opts) do
+    {req_opts, opts} = pop_request_opts(opts)
 
     path = Paths.delete_by(index)
 
@@ -415,8 +480,8 @@ defmodule Algolia do
       |> validate_delete_by_opts!()
       |> Map.new()
 
-    :write
-    |> send_request(%{method: :post, path: path, body: body, options: request_options})
+    client
+    |> send_request(:write, %{method: :post, path: path, body: body, options: req_opts})
     |> inject_index_into_response(index)
   end
 
@@ -438,76 +503,86 @@ defmodule Algolia do
   @doc """
   List all indexes
   """
-  def list_indexes do
-    send_request(:read, %{method: :get, path: Paths.indexes()})
+  @spec list_indexes(client(), [request_option()]) :: result(map())
+  def list_indexes(client, opts \\ []) do
+    send_request(client, :read, %{method: :get, path: Paths.indexes(), options: opts})
   end
 
   @doc """
   Deletes the index
   """
-  def delete_index(index) do
-    :write
-    |> send_request(%{method: :delete, path: Paths.index(index)})
+  @spec delete_index(client(), index(), [request_option()]) :: result(map())
+  def delete_index(client, index, opts \\ []) do
+    client
+    |> send_request(:write, %{method: :delete, path: Paths.index(index), options: opts})
     |> inject_index_into_response(index)
   end
 
   @doc """
   Clears all content of an index
   """
-  def clear_index(index) do
-    :write
-    |> send_request(%{method: :post, path: Paths.clear(index)})
+  @spec clear_index(client(), index(), [request_option()]) :: result(map())
+  def clear_index(client, index, opts \\ []) do
+    client
+    |> send_request(:write, %{method: :post, path: Paths.clear(index), options: opts})
     |> inject_index_into_response(index)
   end
 
   @doc """
   Set the settings of a index
   """
-  def set_settings(index, settings) do
+  @spec set_settings(client(), index(), map(), [request_option()]) :: result(map())
+  def set_settings(client, index, settings, opts \\ []) do
     path = Paths.settings(index)
 
-    :write
-    |> send_request(%{method: :put, path: path, body: settings})
+    client
+    |> send_request(:write, %{method: :put, path: path, body: settings, options: opts})
     |> inject_index_into_response(index)
   end
 
   @doc """
   Get the settings of a index
   """
-  def get_settings(index) do
-    :read
-    |> send_request(%{method: :get, path: Paths.settings(index)})
+  @spec get_settings(client(), index(), [request_option()]) :: result(map())
+  def get_settings(client, index, opts \\ []) do
+    client
+    |> send_request(:read, %{method: :get, path: Paths.settings(index), options: opts})
     |> inject_index_into_response(index)
   end
 
   @doc """
   Moves an index to new one
   """
-  def move_index(src_index, dst_index) do
+  @spec move_index(client(), index(), index(), [request_option()]) :: result(map())
+  def move_index(client, src_index, dst_index, opts \\ []) do
     body = %{operation: "move", destination: dst_index}
 
-    :write
-    |> send_request(%{method: :post, path: Paths.operation(src_index), body: body})
+    client
+    |> send_request(:write, %{
+      method: :post,
+      path: Paths.operation(src_index),
+      body: body,
+      options: opts
+    })
     |> inject_index_into_response(src_index)
   end
 
   @doc """
   Copies an index to a new one
   """
-  def copy_index(src_index, dst_index) do
+  @spec copy_index(client(), index(), index(), [request_option()]) :: result(map())
+  def copy_index(client, src_index, dst_index, opts \\ []) do
     body = %{operation: "copy", destination: dst_index}
 
-    :write
-    |> send_request(%{method: :post, path: Paths.operation(src_index), body: body})
+    client
+    |> send_request(:write, %{
+      method: :post,
+      path: Paths.operation(src_index),
+      body: body,
+      options: opts
+    })
     |> inject_index_into_response(src_index)
   end
-
-  ## Helps piping a response into wait_task, as it requires the index
-  defp inject_index_into_response({:ok, body}, index) do
-    {:ok, Map.put(body, "indexName", index)}
-  end
-
-  defp inject_index_into_response(response, _index), do: response
 
   @doc """
   Get the logs of the latest search and indexing operations.
@@ -524,22 +599,39 @@ defmodule Algolia do
 
     * `:type` - Type of log to retrieve: `all` (default), `query`, `build` or `error`.
   """
-  def get_logs(opts \\ []) do
-    send_request(:write, %{method: :get, path: Paths.logs(opts)})
+  @spec get_logs(client(), [
+          {:indexName, index()}
+          | {:length, integer()}
+          | {:offset, integer()}
+          | {:type, :all | :query | :build | :error}
+          | request_option()
+        ]) :: result(map())
+  def get_logs(client, opts \\ []) do
+    {req_opts, opts} = pop_request_opts(opts)
+    send_request(client, :write, %{method: :get, path: Paths.logs(opts), options: req_opts})
   end
 
   @doc """
   Wait for a task for an index to complete
   returns :ok when it's done
   """
-  def wait_task(index, task_id, time_before_retry \\ 1000) do
-    case send_request(:write, %{method: :get, path: Paths.task(index, task_id)}) do
+  @spec wait_task(client(), index(), String.t(), [
+          {:retry_delay, integer()} | request_option()
+        ]) :: :ok | {:error, any()}
+  def wait_task(client, index, task_id, opts \\ []) do
+    retry_delay = Keyword.get(opts, :retry_delay, 1000)
+
+    case send_request(client, :write, %{
+           method: :get,
+           path: Paths.task(index, task_id),
+           options: opts
+         }) do
       {:ok, %{"status" => "published"}} ->
         :ok
 
       {:ok, %{"status" => "notPublished"}} ->
-        :timer.sleep(time_before_retry)
-        wait_task(index, task_id, time_before_retry)
+        :timer.sleep(retry_delay)
+        wait_task(client, index, task_id, opts)
 
       other ->
         other
@@ -550,25 +642,59 @@ defmodule Algolia do
   Convinient version of wait_task/4, accepts a response to be waited on
   directly. This enables piping a operation directly into wait_task
   """
-  def wait(response = {:ok, %{"indexName" => index, "taskID" => task_id}}, time_before_retry) do
-    with :ok <- wait_task(index, task_id, time_before_retry), do: response
+  @spec wait(result(map()), client(), [
+          {:retry_delay, integer()} | request_option()
+        ]) :: :ok | {:error, any()}
+  def wait(response, client, opts \\ [])
+
+  def wait({:ok, %{"indexName" => index, "taskID" => task_id}} = response, client, opts) do
+    with :ok <- wait_task(client, index, task_id, opts), do: response
   end
 
-  def wait(response = {:ok, _}), do: wait(response, 1000)
-  def wait(response = {:error, _}), do: response
-  def wait(response), do: response
+  def wait(response, _client, _opts), do: response
 
   @doc """
   Push events to the Insights REST API.
   Corresponds to https://www.algolia.com/doc/rest-api/insights/#push-events
   `events` should be a List of Maps, each Map having the fields described in the link above
   """
-  def push_events(events) do
+  @spec push_events(client(), [map()], [request_option()]) :: result(map())
+  def push_events(client, events, opts \\ []) do
     body = %{"events" => events}
 
     send_request(
+      client,
       :insights,
-      %{method: :post, path: "/1/events", body: body}
+      %{method: :post, path: "/1/events", body: body, options: opts}
     )
   end
+
+  defp send_request(client, subdomain_hint, request) do
+    {path, request} = Map.pop(request, :path)
+    {options, request} = Map.pop(request, :options, [])
+
+    opts =
+      request
+      |> Map.to_list()
+      |> Keyword.merge(
+        url: path,
+        headers: options[:headers] || [],
+        opts: [subdomain_hint: subdomain_hint]
+      )
+
+    with {:ok, %{body: response}} <- Tesla.request(client, opts) do
+      {:ok, response}
+    end
+  end
+
+  defp pop_request_opts(opts) do
+    Keyword.split(opts, [:headers])
+  end
+
+  ## Helps piping a response into wait_task, as it requires the index
+  defp inject_index_into_response({:ok, body}, index) do
+    {:ok, Map.put(body, "indexName", index)}
+  end
+
+  defp inject_index_into_response(response, _index), do: response
 end
