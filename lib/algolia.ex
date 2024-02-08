@@ -120,12 +120,16 @@ defmodule Algolia do
   def search(client, index, query, opts \\ []) do
     {req_opts, opts} = pop_request_opts(opts)
 
-    path = Paths.search(index, query, opts)
+    body =
+      opts
+      |> Map.new()
+      |> Map.put(:query, query)
 
     with {:ok, %{} = data} <-
            send_request(client, :read, %{
-             method: :get,
-             path: path,
+             method: :post,
+             path: Paths.search(index),
+             body: body,
              options: req_opts
            }) do
       :telemetry.execute(
@@ -207,10 +211,13 @@ defmodule Algolia do
   def browse(client, index, opts \\ []) do
     {req_opts, opts} = pop_request_opts(opts)
 
-    path = Paths.browse(index, opts)
-
     with {:ok, %{} = data} <-
-           send_request(client, :read, %{method: :get, path: path, options: req_opts}) do
+           send_request(client, :read, %{
+             method: :post,
+             path: Paths.browse(index),
+             body: Map.new(opts),
+             options: req_opts
+           }) do
       :telemetry.execute(
         [:algolia, :browse, :result],
         %{hits: data["nbHits"], processing_time: data["processingTimeMS"]},
