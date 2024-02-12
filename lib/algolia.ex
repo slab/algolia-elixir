@@ -57,7 +57,12 @@ defmodule Algolia do
     middleware_fn = Keyword.get(opts, :middleware, & &1)
     adapter = Keyword.get(opts, :adapter)
 
-    middleware = opts |> default_middleware() |> middleware_fn.()
+    middleware =
+      opts
+      |> Keyword.put_new_lazy(:api_key, &api_key/0)
+      |> Keyword.put_new_lazy(:application_id, &application_id/0)
+      |> default_middleware()
+      |> middleware_fn.()
 
     Tesla.client(middleware, adapter)
   end
