@@ -28,16 +28,13 @@ defmodule Algolia.Paths do
     object(index, object_id) <> "/partial" <> to_query(params)
   end
 
-  def search(index, query, opts) do
-    params = Keyword.put(opts, :query, query)
-    index(index) <> to_query(params)
-  end
+  def search(index), do: index(index) <> "/query"
 
   def search_facet(index, facet) do
     index(index) <> "/facets/" <> URI.encode(facet) <> "/query"
   end
 
-  def browse(index, opts), do: index(index) <> "/browse" <> to_query(opts)
+  def browse(index), do: index(index) <> "/browse"
 
   def clear(index), do: index(index) <> "/clear"
 
