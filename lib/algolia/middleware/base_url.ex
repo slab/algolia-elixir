@@ -5,7 +5,7 @@ defmodule Algolia.Middleware.BaseUrl do
   def call(env, next, opts) do
     hint = env.opts[:subdomain_hint]
     curr_retry = env.opts[:curr_retry]
-    application_id = Keyword.get_lazy(opts, :application_id, &Algolia.application_id/0)
+    application_id = Keyword.fetch!(opts, :application_id)
 
     host =
       case {hint, curr_retry} do
