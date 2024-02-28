@@ -4,20 +4,22 @@ defmodule Algolia.Mixfile do
   def project do
     [
       app: :algolia,
-      version: "0.8.0",
+      version: "0.9.0",
       description: "Elixir implementation of Algolia Search API",
       elixir: "~> 1.5",
       package: package(),
       deps: deps(),
-      docs: [extras: ["README.md"], main: "readme"]
+      docs: [extras: ["README.md"], main: "readme"],
+      source_url: "https://github.com/slab/algolia-elixir"
     ]
   end
 
   def package do
     [
-      maintainers: ["Sikan He"],
+      name: "algolia_ex",
+      maintainers: ["Slab"],
       licenses: ["Apache 2.0"],
-      links: %{"GitHub" => "https://github.com/sikanhe/algolia-elixir"}
+      links: %{"GitHub" => "https://github.com/slab/algolia-elixir"}
     ]
   end
 
