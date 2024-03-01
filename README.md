@@ -6,7 +6,7 @@ To use it, add the following to your dependencies:
 
 ```elixir
 defp deps do
-    [{:algolia, "~> 0.8.0"}]
+  [{:algolia, "~> 0.9.0", hex: :algolia_ex}]
 end
 ```
 
