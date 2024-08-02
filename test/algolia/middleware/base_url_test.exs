@@ -5,13 +5,13 @@ defmodule Algolia.Middleware.BaseUrlTest do
 
   alias Tesla.Env
 
-  @opts [application_id: "application_id"]
+  @opts [application_id: "application_id", host_order: [3, 1, 2]]
 
   describe "read requests" do
     test "use dsn subdomain for first request" do
       assert {:ok, env} =
                BaseUrl.call(
-                 %Env{url: "/1/indexes", opts: [subdomain_hint: :read, curr_retry: 0]},
+                 %Env{url: "/1/indexes", opts: [subdomain_hint: :read, retry_count: 0]},
                  [],
                  @opts
                )
@@ -22,21 +22,30 @@ defmodule Algolia.Middleware.BaseUrlTest do
     test "use numbered subdomain for subsequent requests" do
       assert {:ok, env} =
                BaseUrl.call(
-                 %Env{url: "/1/indexes", opts: [subdomain_hint: :read, curr_retry: 1]},
-                 [],
-                 @opts
-               )
-
-      assert env.url == "https://application_id-1.algolianet.com/1/indexes"
-
-      assert {:ok, env} =
-               BaseUrl.call(
-                 %Env{url: "/1/indexes", opts: [subdomain_hint: :read, curr_retry: 3]},
+                 %Env{url: "/1/indexes", opts: [subdomain_hint: :read, retry_count: 1]},
                  [],
                  @opts
                )
 
       assert env.url == "https://application_id-3.algolianet.com/1/indexes"
+
+      assert {:ok, env} =
+               BaseUrl.call(
+                 %Env{url: "/1/indexes", opts: [subdomain_hint: :read, retry_count: 3]},
+                 [],
+                 @opts
+               )
+
+      assert env.url == "https://application_id-2.algolianet.com/1/indexes"
+
+      assert {:ok, env} =
+               BaseUrl.call(
+                 %Env{url: "/1/indexes", opts: [subdomain_hint: :read, retry_count: 5]},
+                 [],
+                 @opts
+               )
+
+      assert env.url == "https://application_id-1.algolianet.com/1/indexes"
     end
   end
 
@@ -44,7 +53,7 @@ defmodule Algolia.Middleware.BaseUrlTest do
     test "use basic subdomain for first request" do
       assert {:ok, env} =
                BaseUrl.call(
-                 %Env{url: "/1/indexes/foo/bar", opts: [subdomain_hint: :write, curr_retry: 0]},
+                 %Env{url: "/1/indexes/foo/bar", opts: [subdomain_hint: :write, retry_count: 0]},
                  [],
                  @opts
                )
@@ -55,21 +64,30 @@ defmodule Algolia.Middleware.BaseUrlTest do
     test "use numbered subdomain for subsequent requests" do
       assert {:ok, env} =
                BaseUrl.call(
-                 %Env{url: "/1/indexes/foo/bar", opts: [subdomain_hint: :write, curr_retry: 1]},
-                 [],
-                 @opts
-               )
-
-      assert env.url == "https://application_id-1.algolianet.com/1/indexes/foo/bar"
-
-      assert {:ok, env} =
-               BaseUrl.call(
-                 %Env{url: "/1/indexes/foo/bar", opts: [subdomain_hint: :write, curr_retry: 3]},
+                 %Env{url: "/1/indexes/foo/bar", opts: [subdomain_hint: :write, retry_count: 1]},
                  [],
                  @opts
                )
 
       assert env.url == "https://application_id-3.algolianet.com/1/indexes/foo/bar"
+
+      assert {:ok, env} =
+               BaseUrl.call(
+                 %Env{url: "/1/indexes/foo/bar", opts: [subdomain_hint: :write, retry_count: 3]},
+                 [],
+                 @opts
+               )
+
+      assert env.url == "https://application_id-2.algolianet.com/1/indexes/foo/bar"
+
+      assert {:ok, env} =
+               BaseUrl.call(
+                 %Env{url: "/1/indexes/foo/bar", opts: [subdomain_hint: :write, retry_count: 5]},
+                 [],
+                 @opts
+               )
+
+      assert env.url == "https://application_id-1.algolianet.com/1/indexes/foo/bar"
     end
   end
 
@@ -77,7 +95,7 @@ defmodule Algolia.Middleware.BaseUrlTest do
     test "use insights host for first request" do
       assert {:ok, env} =
                BaseUrl.call(
-                 %Env{url: "/1/events", opts: [subdomain_hint: :insights, curr_retry: 0]},
+                 %Env{url: "/1/events", opts: [subdomain_hint: :insights, retry_count: 0]},
                  [],
                  @opts
                )
@@ -88,7 +106,7 @@ defmodule Algolia.Middleware.BaseUrlTest do
     test "use insights host for retried requests" do
       assert {:ok, env} =
                BaseUrl.call(
-                 %Env{url: "/1/events", opts: [subdomain_hint: :insights, curr_retry: 3]},
+                 %Env{url: "/1/events", opts: [subdomain_hint: :insights, retry_count: 3]},
                  [],
                  @opts
                )

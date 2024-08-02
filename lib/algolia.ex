@@ -122,11 +122,14 @@ defmodule Algolia do
   end
 
   defp default_middleware(opts) do
+    host_order = Enum.shuffle(1..3)
+
     [
       Algolia.Middleware.Telemetry,
       {Algolia.Middleware.Headers, Keyword.take(opts, [:api_key, :application_id])},
       Algolia.Middleware.Retry,
-      {Algolia.Middleware.BaseUrl, Keyword.take(opts, [:application_id])},
+      {Algolia.Middleware.BaseUrl,
+       application_id: Keyword.fetch!(opts, :application_id), host_order: host_order},
       Tesla.Middleware.JSON
     ]
   end

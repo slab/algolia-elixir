@@ -1,22 +1,26 @@
 defmodule Algolia.Middleware.Retry do
   @behaviour Tesla.Middleware
 
+  @default_opts [
+    read: [max_retries: 3],
+    write: [max_retries: 10],
+    insights: [max_retries: 5]
+  ]
+
   @impl Tesla.Middleware
-  def call(env, next, _opts) do
-    curr_retry = 0
+  def call(env, next, opts) do
+    opts = Keyword.merge(@default_opts, opts)
 
-    retry(env, next, curr_retry)
+    retry_opts =
+      opts
+      |> Keyword.fetch!(env.opts[:subdomain_hint])
+      |> Keyword.put_new(:should_retry, &should_retry?/1)
+
+    Tesla.Middleware.Retry.call(env, next, retry_opts)
   end
 
-  defp retry(_env, _next, 4) do
-    {:error, {"Unable to connect to Algolia", 4}}
-  end
-
-  defp retry(env, next, curr_retry) do
-    opts = Keyword.put(env.opts || [], :curr_retry, curr_retry)
-
-    with {:error, _} <- Tesla.run(%{env | opts: opts}, next) do
-      retry(env, next, curr_retry + 1)
-    end
-  end
+  defp should_retry?({:error, _}), do: true
+  defp should_retry?({:ok, %{status: 429}}), do: true
+  defp should_retry?({:ok, %{status: status}}) when status > 499, do: true
+  defp should_retry?(_), do: false
 end
