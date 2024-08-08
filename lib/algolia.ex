@@ -123,8 +123,14 @@ defmodule Algolia do
 
   defp default_middleware(opts) do
     [
-      Algolia.Middleware.Telemetry,
-      {Algolia.Middleware.Headers, Keyword.take(opts, [:api_key, :application_id])},
+      Algolia.Middleware.Response,
+      {Tesla.Middleware.Telemetry,
+       disable_legacy_event: true, metadata: %{client: "algolia-elixir"}},
+      {Tesla.Middleware.Headers,
+       [
+         {"X-Algolia-API-Key", Keyword.fetch!(opts, :api_key)},
+         {"X-Algolia-Application-Id", Keyword.fetch!(opts, :application_id)}
+       ]},
       Algolia.Middleware.Retry,
       {Algolia.Middleware.BaseUrl, Keyword.take(opts, [:application_id])},
       Tesla.Middleware.JSON
@@ -1109,9 +1115,7 @@ defmodule Algolia do
         opts: [subdomain_hint: subdomain_hint]
       )
 
-    with {:ok, %{body: response}} <- Tesla.request(client, opts) do
-      {:ok, response}
-    end
+    Tesla.request(client, opts)
   end
 
   defp pop_request_opts(opts) do
