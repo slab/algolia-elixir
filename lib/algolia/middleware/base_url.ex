@@ -4,8 +4,9 @@ defmodule Algolia.Middleware.BaseUrl do
   @impl Tesla.Middleware
   def call(env, next, opts) do
     hint = env.opts[:subdomain_hint]
-    curr_retry = env.opts[:curr_retry]
+    curr_retry = Keyword.get(env.opts, :retry_count, 0)
     application_id = Keyword.fetch!(opts, :application_id)
+    host_order = Keyword.fetch!(opts, :host_order)
 
     host =
       case {hint, curr_retry} do
@@ -19,7 +20,8 @@ defmodule Algolia.Middleware.BaseUrl do
           "insights.algolia.io"
 
         _ ->
-          "#{application_id}-#{curr_retry}.algolianet.com"
+          idx = Enum.at(host_order, rem(curr_retry - 1, 3))
+          "#{application_id}-#{idx}.algolianet.com"
       end
 
     Tesla.run(%{env | url: "https://#{host}#{env.url}"}, next)
