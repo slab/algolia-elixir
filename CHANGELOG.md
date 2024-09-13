@@ -1,3 +1,9 @@
+## v0.10.0 (2024-09-13)
+
+  * **BREAKING**: Use Tesla's telemetry middleware instead of a custom one. Telemetry events for requests can now be found under `[:tesla, :request]` with `client: "algolia-elixir"`.
+  * Retries will now be performed for 5XX HTTP errors, in addition to network-level errors as before.
+  * Network-level errors are now returned directly as `{:error, reason}` rather than a generic message about being unable to connect.
+
 ## v0.9.0 (2024-02-28)
 
 This is the first release published under the `algolia_ex` package name.
