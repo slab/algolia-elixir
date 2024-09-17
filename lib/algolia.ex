@@ -125,7 +125,6 @@ defmodule Algolia do
     host_order = Enum.shuffle(1..3)
 
     [
-      Algolia.Middleware.Response,
       {Tesla.Middleware.Telemetry,
        disable_legacy_event: true, metadata: %{client: "algolia-elixir"}},
       {Tesla.Middleware.Headers,
@@ -232,7 +231,7 @@ defmodule Algolia do
       |> Map.new()
       |> Map.put(:query, query)
 
-    with {:ok, %{} = data} <-
+    with {:ok, %{status: 200, body: data} = env} <-
            send_request(client, :read, %{
              method: :post,
              path: Paths.search(index),
@@ -245,7 +244,7 @@ defmodule Algolia do
         %{query: query, index: index, options: opts}
       )
 
-      {:ok, data}
+      {:ok, env}
     end
   end
 
@@ -336,7 +335,7 @@ defmodule Algolia do
   def browse(client, index, opts \\ []) do
     {req_opts, opts} = pop_request_opts(opts)
 
-    with {:ok, %{} = data} <-
+    with {:ok, %{status: 200, body: data} = env} <-
            send_request(client, :read, %{
              method: :post,
              path: Paths.browse(index),
@@ -349,7 +348,7 @@ defmodule Algolia do
         %{index: index, options: opts}
       )
 
-      {:ok, data}
+      {:ok, env}
     end
   end
 
@@ -1021,10 +1020,10 @@ defmodule Algolia do
            path: Paths.task(index, task_id),
            options: opts
          }) do
-      {:ok, %{"status" => "published"}} ->
+      {:ok, %{status: 200, body: %{"status" => "published"}}} ->
         :ok
 
-      {:ok, %{"status" => "notPublished"}} ->
+      {:ok, %{status: 200, body: %{"status" => "notPublished"}}} ->
         :timer.sleep(retry_delay)
         wait_task(client, index, task_id, opts)
 
@@ -1064,8 +1063,14 @@ defmodule Algolia do
         ]) :: :ok | {:error, any()}
   def wait(response, client, opts \\ [])
 
-  def wait({:ok, %{"indexName" => index, "taskID" => task_id}} = response, client, opts) do
-    with :ok <- wait_task(client, index, task_id, opts), do: response
+  def wait({:ok, %{body: %{"taskID" => task_id}} = env} = response, client, opts) do
+    case Keyword.fetch(env.opts, :index_name) do
+      :error ->
+        response
+
+      {:ok, index} ->
+        with :ok <- wait_task(client, index, task_id, opts), do: response
+    end
   end
 
   def wait(response, _client, _opts), do: response
@@ -1126,8 +1131,9 @@ defmodule Algolia do
   end
 
   ## Helps piping a response into wait_task, as it requires the index
-  defp inject_index_into_response({:ok, body}, index) do
-    {:ok, Map.put(body, "indexName", index)}
+  defp inject_index_into_response({:ok, %{status: status} = env}, index)
+       when status in 200..299 do
+    {:ok, Tesla.put_opt(env, :index_name, index)}
   end
 
   defp inject_index_into_response(response, _index), do: response
