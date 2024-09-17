@@ -1,3 +1,8 @@
+## Unreleased
+
+  * **BREAKING**: All HTTP responses are now returned as `{:ok, %Tesla.Env{}}`, including those with 4XX or 5XX status codes.
+    Only network errors will return `{:error, reason}` tuples.
+
 ## v0.10.0 (2024-09-13)
 
   * **BREAKING**: Use Tesla's telemetry middleware instead of a custom one. Telemetry events for requests can now be found under `[:tesla, :request]` with `client: "algolia-elixir"`.
