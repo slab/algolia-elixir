@@ -1,4 +1,4 @@
-## Unreleased
+## v0.11.0 (2024-09-20)
 
   * **BREAKING**: All HTTP responses are now returned as `{:ok, %Tesla.Env{}}`, including those with 4XX or 5XX status codes.
     Only network errors will return `{:error, reason}` tuples.
