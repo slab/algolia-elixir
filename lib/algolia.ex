@@ -60,7 +60,7 @@ defmodule Algolia do
   Generic options that can be passed to any API function.
   """
   @type request_option() :: {:headers, Tesla.Env.headers()}
-  @type result(resp) :: {:ok, resp} | {:error, any()}
+  @type result(resp) :: {:ok, resp} | {:error, any()} | {:error, pos_integer(), any()}
 
   @doc """
   Creates a new Algolia client.
